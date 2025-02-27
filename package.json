@@ -1,0 +1,25 @@
+{
+    "name": "badofone-chat",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+      "dev": "next dev",
+      "build": "next build",
+      "start": "next start"
+    },
+    "dependencies": {
+      "@mui/material": "^5.14.0",
+      "@emotion/react": "^11.10.6",
+      "@emotion/styled": "^11.10.6",
+      "next": "latest",
+      "react": "latest",
+      "react-dom": "latest",
+      "tailwindcss": "^3.0.0",
+      "postcss": "^8.0.0",
+      "autoprefixer": "^10.0.0"
+    },
+    "devDependencies": {
+      "typescript": "^5.0.0"
+    }
+  }
+  
