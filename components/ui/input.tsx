@@ -1,21 +1,17 @@
 import React from "react";
+import clsx from "clsx";
 
-interface InputProps {
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  placeholder?: string;
-  className?: string;
-  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
-}
+type InputProps = React.InputHTMLAttributes<HTMLInputElement>;
 
-export default function Input({ value, onChange, placeholder, className = "", onKeyDown }: InputProps) {
+export default function Input({ className = "", type = "text", ...props }: InputProps) {
   return (
     <input
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      onKeyDown={onKeyDown}
-      className={`border p-2 rounded-lg w-full ${className}`}
+      type={type}
+      className={clsx(
+        "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:cursor-not-allowed disabled:bg-gray-100",
+        className
+      )}
+      {...props}
     />
   );
 }

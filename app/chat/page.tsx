@@ -1,130 +1,237 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { Card, CardContent, Typography } from "@mui/material";
+import { useEffect, useMemo, useRef, useState } from "react";
+import ChatBubble from "@/components/chat/chat-bubble";
+import ChatToolbar from "@/components/chat/chat-toolbar";
+import SupportResources from "@/components/chat/support-resources";
+import Button from "@/components/ui/button";
+import Card from "@/components/ui/card";
+import Input from "@/components/ui/input";
+import { listScenarios, getScenario, ScenarioKey } from "@/lib/scenarios";
+import { Message, SupportSuggestion } from "@/types/chat";
 
-const botResponses = [
-  "Have you tried turning your router off and on again?",
-  "We are currently experiencing high traffic. Please try again later.",
-  "Our system does not detect any issues on your end.",
-  "Please check our support page for troubleshooting steps.",
-  "This issue has been escalated to our technical team (maybe).",
-  "We appreciate your patience while we do nothing about this.",
-];
+const scenarioOptions = listScenarios();
+const defaultScenarioKey: ScenarioKey = "technical";
+const defaultScenario = getScenario(defaultScenarioKey);
 
-const botCrazyResponses = [
-  "For urgent support, call our hotline at **$10 per minute**. Available **Monday-Friday** from **2:00 PM - 4:00 PM**, excluding lunch break **(2:30 PM - 3:30 PM)** and **Tuesday, Wednesday, and Thursday**.",
-  "You can submit a complaint here: ❌ Form not available.",
-  "For further assistance, please visit our help page: ❌ 404 Error: Page not found.",
-];
-
-const userAutoResponses = [
-  "Hello, my internet is not working!",
-  "Yes, I have tried that already!",
-  "This is ridiculous...",
-  "Can I speak to a real person?",
-  "ARE YOU A BOT?!",
-  "I'm done with this support!",
-];
+function createMessage(
+  sender: Message["sender"],
+  text: string,
+  mood?: Message["mood"],
+  meta?: Message["meta"]
+): Message {
+  return {
+    id: `${sender}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    sender,
+    text,
+    timestamp: new Date().toISOString(),
+    mood,
+    meta,
+  };
+}
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<{ sender: string; text: string }[]>([
-    { sender: "bot", text: "👾 Welcome to Badofone Support! How can we help?" },
+  const [scenarioKey, setScenarioKey] = useState<ScenarioKey>(defaultScenarioKey);
+  const scenario = useMemo(() => getScenario(scenarioKey), [scenarioKey]);
+  const [messages, setMessages] = useState<Message[]>([
+    createMessage("bot", defaultScenario.greeting, "neutral"),
   ]);
-  const [isTyping, setIsTyping] = useState(false);
+  const [input, setInput] = useState("");
+  const [autopilotEnabled, setAutopilotEnabled] = useState(true);
+  const [autoIndex, setAutoIndex] = useState(0);
+  const [suggestions, setSuggestions] = useState<SupportSuggestion[]>([]);
+  const [escalationTicket, setEscalationTicket] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, suggestions]);
 
   useEffect(() => {
-    startAutoChat();
-  }, []);
+    setMessages([createMessage("bot", scenario.greeting, "neutral")]);
+    setAutopilotEnabled(true);
+    setAutoIndex(0);
+    setSuggestions([]);
+    setEscalationTicket(null);
+  }, [scenario]);
 
-  const startAutoChat = () => {
-    let index = 0;
-    const interval = setInterval(() => {
-      if (index >= userAutoResponses.length) {
-        clearInterval(interval);
-        return;
-      }
+  useEffect(() => {
+    if (!autopilotEnabled || busy) {
+      return;
+    }
 
-      // Symbol by symbol enter imitation
-      typeMessage("user", userAutoResponses[index]);
+    if (autoIndex >= scenario.script.length) {
+      setAutopilotEnabled(false);
+      return;
+    }
 
-      setTimeout(() => {
-        setIsTyping(true);
-        setTimeout(() => {
-          setIsTyping(false);
-          const botReply = botResponses[Math.floor(Math.random() * botResponses.length)];
-          const crazyReply = index % 3 === 0 ? botCrazyResponses[Math.floor(Math.random() * botCrazyResponses.length)] : null;
-          setMessages((prev) => [
-            ...prev,
-            { sender: "bot", text: `👾 ${botReply}` },
-            ...(crazyReply ? [{ sender: "bot-crazy", text: `❗ ${crazyReply}` }] : []),
-          ]);
-        }, 2000);
-      }, 2000);
+    const scriptedLine = scenario.script[autoIndex];
+    const timer = setTimeout(() => {
+      pushMessage("user", scriptedLine, undefined, { autopilot: true });
+      void dispatchToBot(scriptedLine, { autopilot: true });
+      setAutoIndex((prev) => prev + 1);
+    }, autoIndex === 0 ? 1000 : 4500);
 
-      index++;
-    }, 5000);
+    return () => clearTimeout(timer);
+  }, [autoIndex, autopilotEnabled, busy, scenario]);
+
+  const pushMessage = (
+    sender: Message["sender"],
+    text: string,
+    mood?: Message["mood"],
+    meta?: Message["meta"]
+  ) => {
+    setMessages((prev) => [...prev, createMessage(sender, text, mood, meta)]);
   };
 
-  const typeMessage = (sender: "user" | "bot", message: string) => {
-    let i = 0;
-    let tempMessage = "";
-
-    const interval = setInterval(() => {
-      if (i >= message.length) {
-        clearInterval(interval);
-        return;
-      }
-
-      tempMessage += message[i]; // New symbol in the line
-
-      setMessages((prev) => {
-        const lastMessage = prev[prev.length - 1];
-
-        if (lastMessage?.sender === sender && lastMessage?.text) {
-          return [...prev.slice(0, -1), { sender, text: tempMessage }];
-        } else {
-          return [...prev, { sender, text: tempMessage }];
-        }
+  const dispatchToBot = async (
+    content: string,
+    options?: { autopilot?: boolean; escalate?: boolean }
+  ) => {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/support/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: content,
+          scenario: scenario.key,
+          autopilot: Boolean(options?.autopilot),
+          escalate: Boolean(options?.escalate),
+        }),
       });
 
-      i++;
-    }, 50);
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const payload = await response.json();
+      pushMessage("bot", payload.reply, payload.mood);
+
+      if (payload.escalationTicket) {
+        setEscalationTicket(payload.escalationTicket);
+        pushMessage(
+          "system",
+          `Escalation ticket ${payload.escalationTicket} created. Estimated response window: ±14 geological eras.`
+        );
+      }
+
+      setSuggestions(payload.suggestions ?? []);
+    } catch (error) {
+      pushMessage(
+        "system",
+        "🚨 Connection to Badofone collapsed. Please increase the volume of your frustration and try again."
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSubmit = (event?: React.FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    if (!input.trim()) {
+      return;
+    }
+
+    const sanitized = input.trim();
+    setInput("");
+    setAutopilotEnabled(false);
+    pushMessage("user", sanitized);
+    void dispatchToBot(sanitized);
+  };
+
+  const handleScenarioChange = (key: ScenarioKey) => {
+    setScenarioKey(key);
+  };
+
+  const handleToggleAutopilot = () => {
+    setAutopilotEnabled((prev) => !prev);
+  };
+
+  const handleEscalate = () => {
+    const text = "I want this escalated immediately.";
+    setAutopilotEnabled(false);
+    pushMessage("user", text);
+    void dispatchToBot(text, { escalate: true });
+  };
+
+  const handleSuggestionSelect = (suggestion: SupportSuggestion) => {
+    const text = `I read \"${suggestion.title}\" and it still didn't fix anything.`;
+    setAutopilotEnabled(false);
+    pushMessage("user", text);
+    void dispatchToBot(text);
   };
 
   return (
-    <div className="flex justify-center items-center h-screen bg-gray-100">
-      <Card sx={{ width: "100%", maxWidth: 500, boxShadow: 3, borderRadius: 3 }}>
-        <Typography variant="h5" sx={{ backgroundColor: "red", color: "white", p: 2, textAlign: "center", borderRadius: "8px 8px 0 0" }}>
-          Badofone Support Chat 💬
-        </Typography>
-        <CardContent sx={{ height: 400, overflowY: "auto", bgcolor: "#f5f5f5", p: 2 }}>
-          {messages.map((msg, index) => (
-            <Typography
-              key={index}
-              sx={{
-                p: 1.5,
-                mb: 1,
-                borderRadius: 2,
-                color: "white",
-                maxWidth: "75%",
-                alignSelf: msg.sender === "user" ? "flex-end" : "flex-start",
-                bgcolor: msg.sender === "user" ? "blue" : msg.sender === "bot-crazy" ? "red" : "gray",
-                display: "inline-block",
-              }}
+    <div className="min-h-screen bg-slate-100 py-10">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 md:flex-row">
+        <aside className="md:w-5/12">
+          <ChatToolbar
+            scenario={scenario}
+            options={scenarioOptions}
+            onScenarioChange={handleScenarioChange}
+            autopilotEnabled={autopilotEnabled}
+            onToggleAutopilot={handleToggleAutopilot}
+            onEscalate={handleEscalate}
+            busy={busy}
+          />
+        </aside>
+
+        <section className="flex flex-1 flex-col gap-4">
+          <Card className="flex h-[70vh] flex-col" padding={false}>
+            <div className="border-b border-slate-200 bg-slate-900 px-6 py-4 text-white">
+              <h1 className="text-lg font-semibold">Badofone Support Arena 💬</h1>
+              <p className="text-sm text-slate-300">Scenario: {scenario.label}</p>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto bg-gradient-to-b from-slate-50 to-slate-100 px-6 py-6">
+              {messages.map((message) => (
+                <ChatBubble key={message.id} message={message} />
+              ))}
+
+              {busy && (
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  👾 Badofone is composing a vague reply...
+                </p>
+              )}
+
+              <div ref={chatEndRef} />
+            </div>
+
+            <form
+              onSubmit={handleSubmit}
+              className="border-t border-slate-200 bg-white px-4 py-4"
             >
-              {msg.text}
-            </Typography>
-          ))}
-          {isTyping && <Typography sx={{ color: "gray", fontSize: "0.9rem" }}>👾 Badofone is typing...</Typography>}
-          <div ref={chatEndRef} />
-        </CardContent>
-      </Card>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Input
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  placeholder="Type your plea for help..."
+                  disabled={busy}
+                />
+                <Button
+                  type="submit"
+                  disabled={busy || !input.trim()}
+                  className="sm:w-40"
+                >
+                  Send cry for help
+                </Button>
+              </div>
+              {escalationTicket && (
+                <p className="mt-3 text-xs text-amber-600">
+                  Escalation ticket {escalationTicket} logged. Estimated resolution: sometime between now and the heat death of the universe.
+                </p>
+              )}
+            </form>
+          </Card>
+
+          <SupportResources
+            suggestions={suggestions}
+            onSuggestionSelect={handleSuggestionSelect}
+          />
+        </section>
+      </div>
     </div>
   );
 }
