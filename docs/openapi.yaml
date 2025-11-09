@@ -1,0 +1,115 @@
+openapi: 3.1.0
+info:
+  title: Badofone Support Simulator API
+  version: 1.0.0
+  description: |
+    The Badofone Support Simulator exposes a playful HTTP endpoint that returns
+    unhelpful customer support responses. It powers the interactive chat UI and
+    may be integrated into automated testing scenarios for chaos engineering.
+servers:
+  - url: http://localhost:3000/api
+    description: Local development server
+paths:
+  /support/respond:
+    post:
+      operationId: respondToCustomer
+      summary: Generate a signature Badofone support response
+      tags:
+        - Support
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupportRequest"
+      responses:
+        "200":
+          description: Support response generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupportResponse"
+        "400":
+          description: The supplied payload failed validation rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error while crafting a response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    SupportRequest:
+      type: object
+      required:
+        - message
+        - scenario
+      properties:
+        message:
+          type: string
+          minLength: 1
+          description: The raw user message sent to support.
+        scenario:
+          type: string
+          enum: [technical, billing, retention]
+          description: Selects the flavour of corporate dysfunction.
+        autopilot:
+          type: boolean
+          default: false
+          description: Flag requests originating from the scripted autopilot.
+        escalate:
+          type: boolean
+          default: false
+          description: Ask the bot to create a mock escalation ticket.
+    SupportResponse:
+      type: object
+      required:
+        - reply
+        - mood
+        - suggestions
+      properties:
+        reply:
+          type: string
+          description: Snarky bot response text.
+        mood:
+          type: string
+          enum: [neutral, annoyed, unhinged]
+          description: Emotional range of the response for UI styling.
+        suggestions:
+          type: array
+          description: Optional knowledge base links that rarely help.
+          items:
+            $ref: "#/components/schemas/SupportSuggestion"
+        escalationTicket:
+          type: string
+          nullable: true
+          description: Present when the bot pretends to escalate.
+    SupportSuggestion:
+      type: object
+      required:
+        - title
+        - url
+        - description
+      properties:
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+        description:
+          type: string
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        issues:
+          type: object
+          nullable: true
+          description: Structured validation errors when available.

@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-slate-100 font-sans text-slate-900;
+}
+
+* {
+  scrollbar-color: theme("colors.slate.400") transparent;
+}
+
+::selection {
+  @apply bg-blue-600 text-white;
+}
